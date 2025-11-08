@@ -1,8 +1,6 @@
-torch
-torchvision
-transformers
-diffusers
-accelerate
-safetensors
-xformers
-runpod
+transformers>=4.38.0
+diffusers>=0.28.0
+accelerate>=0.31.0
+safetensors>=0.4.2
+xformers==0.0.27.post2
+runpod>=1.4.0
