@@ -1,0 +1,8 @@
+torch
+torchvision
+transformers
+diffusers
+accelerate
+safetensors
+xformers
+runpod
