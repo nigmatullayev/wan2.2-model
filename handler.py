@@ -1,118 +1,75 @@
 import runpod
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import subprocess
+import os
+import json
 import logging
-import sys
 
-# Logging sozlash
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    stream=sys.stdout
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Global
-MODEL_NAME = "wan-ai/wan-2.2-preview"
-tokenizer = None
-model = None
-
-
-def load_model():
-    """Model yuklash"""
-    global tokenizer, model
-
-    if model is not None:
-        return tokenizer, model
-
-    try:
-        logger.info(f"PyTorch version: {torch.__version__}")
-        logger.info(f"CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            logger.info(f"CUDA version: {torch.version.cuda}")
-            logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-
-        logger.info(f"Model yuklanmoqda: {MODEL_NAME}")
-
-        # Tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(
-            MODEL_NAME,
-            trust_remote_code=True
-        )
-
-        # Pad token sozlash
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        # Model
-        logger.info("Model yuklanmoqda...")
-        model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True
-        )
-
-        logger.info(f"Model muvaffaqiyatli yuklandi! Device: {model.device}")
-        return tokenizer, model
-
-    except Exception as e:
-        logger.error(f"Model yuklashda xatolik: {e}", exc_info=True)
-        raise
 
 
 def handler(event):
-    """Handler funksiyasi"""
+    """Video generation handler"""
     try:
-        logger.info(f"Request qabul qilindi: {event}")
-
-        # Model yuklash
-        tok, mdl = load_model()
-
-        # Input
         input_data = event.get("input", {})
         prompt = input_data.get("prompt", "")
-        max_new_tokens = input_data.get("max_new_tokens", 256)
-        temperature = input_data.get("temperature", 0.7)
-        top_p = input_data.get("top_p", 0.9)
+        size = input_data.get("size", "1280*720")
 
         if not prompt:
             return {"error": "Prompt bo'sh"}
 
-        logger.info(f"Generating for prompt: {prompt[:100]}...")
+        logger.info(f"Generating video for: {prompt}")
 
-        # Tokenize
-        inputs = tok(prompt, return_tensors="pt", padding=True)
-        inputs = {k: v.to(mdl.device) for k, v in inputs.items()}
-        input_len = inputs["input_ids"].shape[1]
+        # Video generation buyrug'i
+        cmd = [
+            "python", "Wan2.2/generate.py",
+            "--task", "t2v-A14B",
+            "--size", size,
+            "--ckpt_dir", "./Wan2.2/Wan2.2-T2V-A14B",
+            "--offload_model", "True",
+            "--convert_model_dtype",
+            "--prompt", prompt
+        ]
 
-        # Generate
-        with torch.no_grad():
-            outputs = mdl.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                do_sample=True,
-                pad_token_id=tok.pad_token_id,
-                eos_token_id=tok.eos_token_id
-            )
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 daqiqa
+        )
 
-        # Decode
-        generated = tok.decode(outputs[0][input_len:], skip_special_tokens=True)
+        if result.returncode != 0:
+            return {"error": result.stderr}
 
-        logger.info("Generation tugadi")
+        # Video faylini topish
+        output_dir = "./Wan2.2/output"
+        video_files = [f for f in os.listdir(output_dir) if f.endswith('.mp4')]
+
+        if not video_files:
+            return {"error": "Video yaratilmadi"}
+
+        latest_video = max(
+            [os.path.join(output_dir, f) for f in video_files],
+            key=os.path.getctime
+        )
+
+        # Video faylini base64 ga o'girish (yoki S3 ga yuklash)
+        import base64
+        with open(latest_video, 'rb') as f:
+            video_data = base64.b64encode(f.read()).decode()
 
         return {
-            "output": generated,
-            "tokens": len(outputs[0]) - input_len
+            "video_base64": video_data,
+            "message": "Video muvaffaqiyatli yaratildi"
         }
 
+    except subprocess.TimeoutExpired:
+        return {"error": "Timeout: Video generation 10 daqiqadan ko'p vaqt oldi"}
     except Exception as e:
-        logger.error(f"Handler error: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
         return {"error": str(e)}
 
 
 if __name__ == "__main__":
-    logger.info("Starting RunPod serverless handler...")
+    logger.info("Starting Wan2.2 video generation handler...")
     runpod.serverless.start({"handler": handler})
