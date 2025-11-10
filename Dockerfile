@@ -30,8 +30,18 @@ RUN git clone https://github.com/Wan-Video/Wan2.2.git /app/Wan2.2
 
 WORKDIR /app/Wan2.2
 
-# Wan2.2 dependencies o'rnatish
-RUN pip install --no-cache-dir -r requirements.txt
+# Wan2.2 dependencies o'rnatish (xatolikni to'g'ri ko'rsatish bilan)
+RUN if [ -f requirements.txt ]; then \
+        echo "📦 Requirements.txt topildi, dependency'lar o'rnatilmoqda..." && \
+        pip install --no-cache-dir -r requirements.txt || \
+        (echo "❌ Requirements.txt o'rnatishda xatolik!" && \
+         echo "📋 Fayl mavjudligi:" && ls -la requirements.txt && \
+         echo "📋 Fayl tarkibi (birinchi 50 qator):" && head -50 requirements.txt && \
+         exit 1); \
+    else \
+        echo "⚠️  Requirements.txt topilmadi, skip qilindi" && \
+        echo "📋 Papka tarkibi:" && ls -la; \
+    fi
 
 # RunPod qo'shish
 RUN pip install --no-cache-dir runpod
