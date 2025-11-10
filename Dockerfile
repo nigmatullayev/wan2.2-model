@@ -59,17 +59,33 @@ RUN pip install --no-cache-dir runpod
 # Model yuklab olish (Python API orqali)
 # Model: Wan-AI/Wan2.2-T2V-A14B - Text-to-Video MoE model, supports 480P & 720P
 # Link: https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B
-RUN pip install --no-cache-dir "huggingface_hub[cli]" && \
-    echo "📥 Wan2.2-T2V-A14B model yuklab olinmoqda..." && \
-    python -c "from huggingface_hub import snapshot_download; import os; os.makedirs('./Wan2.2-T2V-A14B', exist_ok=True); snapshot_download(repo_id='Wan-AI/Wan2.2-T2V-A14B', local_dir='./Wan2.2-T2V-A14B', resume_download=True)" && \
-    echo "✅ Model muvaffaqiyatli yuklab olindi!" && \
-    ls -lh ./Wan2.2-T2V-A14B | head -20
+# Model papkasini oldindan yaratish
+RUN mkdir -p ./Wan2.2-T2V-A14B
 
-# Handler faylini ko'chirish
-COPY handler.py /app/handler.py
+# HuggingFace Hub o'rnatish
+RUN pip install --no-cache-dir "huggingface_hub[cli]"
+
+# Model yuklab olish (xatolikni handle qilish bilan)
+RUN echo "📥 Wan2.2-T2V-A14B model yuklab olinmoqda..." && \
+    python -c "from huggingface_hub import snapshot_download; import os; import sys; os.makedirs('./Wan2.2-T2V-A14B', exist_ok=True); try: snapshot_download(repo_id='Wan-AI/Wan2.2-T2V-A14B', local_dir='./Wan2.2-T2V-A14B', resume_download=True); print('✅ Model muvaffaqiyatli yuklab olindi!'); except Exception as e: print(f'⚠️  Model yuklab olishda xatolik: {e}'); sys.exit(1)" && \
+    if [ -d "./Wan2.2-T2V-A14B" ] && [ "$(ls -A ./Wan2.2-T2V-A14B 2>/dev/null)" ]; then \
+        echo "📋 Model fayllari mavjud:" && ls -lh ./Wan2.2-T2V-A14B | head -10; \
+    else \
+        echo "❌ Model papkasi bo'sh yoki topilmadi!" && exit 1; \
+    fi
 
 # Output papkasi
 RUN mkdir -p /app/Wan2.2/output
+
+# Handler faylini ko'chirish (build context'da mavjudligini tekshirish)
+COPY handler.py /app/handler.py
+
+# Handler faylini tekshirish
+RUN if [ ! -f /app/handler.py ]; then \
+        echo "❌ Handler.py topilmadi!" && exit 1; \
+    else \
+        echo "✅ Handler.py muvaffaqiyatli ko'chirildi"; \
+    fi
 
 WORKDIR /app
 
