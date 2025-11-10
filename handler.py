@@ -18,11 +18,37 @@ WAN_DIR = "/app/Wan2.2"
 MODEL_DIR = "/app/Wan2.2/Wan2.2-T2V-A14B"
 OUTPUT_DIR = "/app/Wan2.2/output"
 
+# Model mavjudligini tekshirish va yuklab olish
+def ensure_model_downloaded():
+    """Model mavjudligini tekshirish va agar yo'q bo'lsa yuklab olish"""
+    if os.path.exists(MODEL_DIR) and os.listdir(MODEL_DIR):
+        logger.info(f"✅ Model allaqachon mavjud: {MODEL_DIR}")
+        return True
+    
+    logger.info("📥 Model topilmadi, yuklab olinmoqda...")
+    try:
+        from huggingface_hub import snapshot_download
+        os.makedirs(MODEL_DIR, exist_ok=True)
+        snapshot_download(
+            repo_id='Wan-AI/Wan2.2-T2V-A14B',
+            local_dir=MODEL_DIR,
+            resume_download=True
+        )
+        logger.info("✅ Model muvaffaqiyatli yuklab olindi!")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Model yuklab olishda xatolik: {e}")
+        return False
+
 
 def handler(event):
     """Video generation handler"""
     try:
         logger.info(f"📥 Request qabul qilindi: {event}")
+
+        # Model mavjudligini tekshirish va yuklab olish
+        if not ensure_model_downloaded():
+            return {"error": "Model yuklab olinmadi. Iltimos, qayta urinib ko'ring."}
 
         # Input parametrlar
         input_data = event.get("input", {})

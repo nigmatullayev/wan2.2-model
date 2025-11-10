@@ -56,23 +56,11 @@ RUN if [ -f requirements.txt ]; then \
 # RunPod qo'shish
 RUN pip install --no-cache-dir runpod
 
-# Model yuklab olish (Python API orqali)
-# Model: Wan-AI/Wan2.2-T2V-A14B - Text-to-Video MoE model, supports 480P & 720P
-# Link: https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B
-# Model papkasini oldindan yaratish
-RUN mkdir -p ./Wan2.2-T2V-A14B
-
-# HuggingFace Hub o'rnatish
+# HuggingFace Hub o'rnatish (runtime'da model yuklab olish uchun)
 RUN pip install --no-cache-dir "huggingface_hub[cli]"
 
-# Model yuklab olish (xatolikni handle qilish bilan)
-RUN echo "📥 Wan2.2-T2V-A14B model yuklab olinmoqda..." && \
-    python -c "from huggingface_hub import snapshot_download; import os; import sys; os.makedirs('./Wan2.2-T2V-A14B', exist_ok=True); try: snapshot_download(repo_id='Wan-AI/Wan2.2-T2V-A14B', local_dir='./Wan2.2-T2V-A14B', resume_download=True); print('✅ Model muvaffaqiyatli yuklab olindi!'); except Exception as e: print(f'⚠️  Model yuklab olishda xatolik: {e}'); sys.exit(1)" && \
-    if [ -d "./Wan2.2-T2V-A14B" ] && [ "$(ls -A ./Wan2.2-T2V-A14B 2>/dev/null)" ]; then \
-        echo "📋 Model fayllari mavjud:" && ls -lh ./Wan2.2-T2V-A14B | head -10; \
-    else \
-        echo "❌ Model papkasi bo'sh yoki topilmadi!" && exit 1; \
-    fi
+# Model papkasini yaratish (runtime'da yuklab olinadi)
+RUN mkdir -p ./Wan2.2-T2V-A14B
 
 # Output papkasi
 RUN mkdir -p /app/Wan2.2/output
