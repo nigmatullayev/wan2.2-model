@@ -2,85 +2,91 @@ import runpod
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import logging
-import os
+import sys
 
-# Logging
-logging.basicConfig(level=logging.INFO)
+# Logging sozlash
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
 
-# Model nomi
+# Global
 MODEL_NAME = "wan-ai/wan-2.2-preview"
 tokenizer = None
 model = None
 
 
 def load_model():
-    """Model yuklanish funksiyasi"""
+    """Model yuklash"""
     global tokenizer, model
 
+    if model is not None:
+        return tokenizer, model
+
     try:
-        if model is None:
-            logger.info(f"Model yuklanmoqda: {MODEL_NAME}")
+        logger.info(f"PyTorch version: {torch.__version__}")
+        logger.info(f"CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            logger.info(f"CUDA version: {torch.version.cuda}")
+            logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
 
-            # Cache papkasini sozlash
-            cache_dir = os.environ.get("HF_HOME", "/root/.cache/huggingface")
+        logger.info(f"Model yuklanmoqda: {MODEL_NAME}")
 
-            # Tokenizer yuklash
-            tokenizer = AutoTokenizer.from_pretrained(
-                MODEL_NAME,
-                cache_dir=cache_dir,
-                trust_remote_code=True
-            )
+        # Tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_NAME,
+            trust_remote_code=True
+        )
 
-            # Model yuklash
-            model = AutoModelForCausalLM.from_pretrained(
-                MODEL_NAME,
-                cache_dir=cache_dir,
-                torch_dtype=torch.float16,
-                device_map="auto",
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
-            )
+        # Pad token sozlash
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
-            logger.info("Model muvaffaqiyatli yuklandi!")
-            logger.info(f"Model device: {model.device}")
+        # Model
+        logger.info("Model yuklanmoqda...")
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True
+        )
 
+        logger.info(f"Model muvaffaqiyatli yuklandi! Device: {model.device}")
         return tokenizer, model
 
     except Exception as e:
-        logger.error(f"Model yuklashda xatolik: {str(e)}")
+        logger.error(f"Model yuklashda xatolik: {e}", exc_info=True)
         raise
 
 
 def handler(event):
-    """RunPod handler"""
+    """Handler funksiyasi"""
     try:
-        # Input tekshirish
-        if not event or "input" not in event:
-            return {"error": "Input topilmadi"}
+        logger.info(f"Request qabul qilindi: {event}")
 
         # Model yuklash
         tok, mdl = load_model()
 
-        # Parametrlarni olish
-        input_data = event["input"]
+        # Input
+        input_data = event.get("input", {})
         prompt = input_data.get("prompt", "")
         max_new_tokens = input_data.get("max_new_tokens", 256)
         temperature = input_data.get("temperature", 0.7)
         top_p = input_data.get("top_p", 0.9)
 
         if not prompt:
-            return {"error": "Prompt kiritilmagan"}
+            return {"error": "Prompt bo'sh"}
 
-        logger.info(f"Prompt qabul qilindi: {prompt[:100]}...")
+        logger.info(f"Generating for prompt: {prompt[:100]}...")
 
-        # Tokenizatsiya
-        inputs = tok(prompt, return_tensors="pt")
+        # Tokenize
+        inputs = tok(prompt, return_tensors="pt", padding=True)
         inputs = {k: v.to(mdl.device) for k, v in inputs.items()}
+        input_len = inputs["input_ids"].shape[1]
 
-        input_length = inputs["input_ids"].shape[1]
-
-        # Text generation
+        # Generate
         with torch.no_grad():
             outputs = mdl.generate(
                 **inputs,
@@ -88,32 +94,25 @@ def handler(event):
                 temperature=temperature,
                 top_p=top_p,
                 do_sample=True,
-                pad_token_id=tok.pad_token_id or tok.eos_token_id,
+                pad_token_id=tok.pad_token_id,
                 eos_token_id=tok.eos_token_id
             )
 
-        # Faqat yangi tokenlarni dekodlash
-        generated_text = tok.decode(
-            outputs[0][input_length:],
-            skip_special_tokens=True
-        )
+        # Decode
+        generated = tok.decode(outputs[0][input_len:], skip_special_tokens=True)
 
-        logger.info("Generation tugallandi")
+        logger.info("Generation tugadi")
 
         return {
-            "output": generated_text,
-            "input_tokens": input_length,
-            "output_tokens": len(outputs[0]) - input_length,
-            "total_tokens": len(outputs[0])
+            "output": generated,
+            "tokens": len(outputs[0]) - input_len
         }
 
     except Exception as e:
-        error_msg = f"Handler xatolik: {str(e)}"
-        logger.error(error_msg)
-        return {"error": error_msg}
+        logger.error(f"Handler error: {e}", exc_info=True)
+        return {"error": str(e)}
 
 
-# Serverless start
 if __name__ == "__main__":
-    logger.info("RunPod serverless handler ishga tushmoqda...")
+    logger.info("Starting RunPod serverless handler...")
     runpod.serverless.start({"handler": handler})

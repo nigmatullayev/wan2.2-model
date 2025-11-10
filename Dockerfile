@@ -1,24 +1,23 @@
-FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
-# Ish katalogi
-WORKDIR /app
-
-# Tizim paketlarini yangilash
+# Python o'rnatish
 RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Python kutubxonalarini o'rnatish
+# Python3 ni python deb belgilash
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+WORKDIR /app
+
+# Requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Handler faylini ko'chirish
+# Handler
 COPY handler.py .
 
-# Modelni oldindan yuklash (build vaqtida)
-RUN python -c "from transformers import AutoTokenizer; \
-    AutoTokenizer.from_pretrained('wan-ai/wan-2.2-preview')" || true
-
-# Handler ishga tushirish
 CMD ["python", "-u", "handler.py"]
