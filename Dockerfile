@@ -1,11 +1,16 @@
+# Wan2.2 Text-to-Video Model - RunPod Serverless
+# Professional MLOps Dockerfile
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
-# Environment
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
+# Environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Python va dependencies
-RUN apt-get update && apt-get install -y \
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3-pip \
     python3-dev \
@@ -14,69 +19,69 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     libgl1-mesa-glx \
     libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Python alias
+# Python aliases
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
-# Pip yangilash
+# Upgrade pip and install base packages
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# NumPy 1.x o'rnatish (NumPy 2.x bilan muammo bo'lmasligi uchun)
+# NumPy 1.x (NumPy 2.x compatibility issue fix)
 RUN pip install --no-cache-dir "numpy<2.0"
 
 WORKDIR /app
 
-# Wan2.2 repository clone
-RUN git clone https://github.com/Wan-Video/Wan2.2.git /app/Wan2.2
+# Clone Wan2.2 repository
+RUN git clone https://github.com/Wan-Video/Wan2.2.git /app/Wan2.2 && \
+    cd /app/Wan2.2 && \
+    git checkout main || true
 
 WORKDIR /app/Wan2.2
 
-# NumPy constraint faylini yaratish
+# NumPy constraint file
 RUN echo "numpy<2.0" > /tmp/numpy_constraint.txt
 
-# Wan2.2 dependencies o'rnatish
-# NumPy versiyasini constraint qilib o'rnatamiz
+# Install Wan2.2 dependencies with NumPy constraint
 RUN if [ -f requirements.txt ]; then \
-        echo "📦 Requirements.txt topildi, dependency'lar o'rnatilmoqda..." && \
-        echo "📋 NumPy 1.x bilan constraint qilib o'rnatilmoqda..." && \
+        echo "📦 Installing dependencies from requirements.txt..." && \
         pip install --no-cache-dir -r requirements.txt --constraint /tmp/numpy_constraint.txt 2>&1 | tee /tmp/install.log || \
-        (echo "⚠️  Constraint bilan o'rnatishda xatolik, oddiy usul bilan urinib ko'ramiz..." && \
+        (echo "⚠️  Constraint install failed, trying without constraint..." && \
          pip install --no-cache-dir -r requirements.txt 2>&1 | tee /tmp/install.log || \
-         (echo "❌ Requirements.txt o'rnatishda xatolik!" && \
-          echo "📋 Xatolik log'i:" && cat /tmp/install.log && \
-          echo "📋 Fayl tarkibi (birinchi 50 qator):" && head -50 requirements.txt && \
+         (echo "❌ Dependency installation failed!" && \
+          echo "📋 Error log:" && tail -100 /tmp/install.log && \
+          echo "📋 First 50 lines of requirements.txt:" && head -50 requirements.txt && \
           exit 1)); \
     else \
-        echo "⚠️  Requirements.txt topilmadi, skip qilindi" && \
-        echo "📋 Papka tarkibi:" && ls -la; \
+        echo "⚠️  requirements.txt not found, skipping..." && \
+        ls -la; \
     fi
 
-# RunPod va HuggingFace Hub o'rnatish
+# Install RunPod and HuggingFace Hub
 RUN pip install --no-cache-dir runpod "huggingface_hub[cli]"
 
-# Model va output papkalarini yaratish
-# ⚠️ MUHIM: Model build vaqtida yuklab OLINMAYDI!
-# Model runtime'da (handler.py orqali) birinchi request'da avtomatik yuklab olinadi
+# Create model and output directories
+# NOTE: Model will be downloaded at runtime (first request) to avoid build timeout
 RUN mkdir -p ./Wan2.2-T2V-A14B /app/Wan2.2/output && \
-    echo "✅ Model papkasi yaratildi (runtime'da yuklab olinadi)"
+    echo "✅ Directories created (model will be downloaded at runtime)"
 
-# Handler faylini ko'chirish (build context'da mavjudligini tekshirish)
+# Copy handler file
 COPY handler.py /app/handler.py
 
-# Handler faylini tekshirish
+# Verify handler file
 RUN if [ ! -f /app/handler.py ]; then \
-        echo "❌ Handler.py topilmadi!" && exit 1; \
+        echo "❌ handler.py not found!" && exit 1; \
     else \
-        echo "✅ Handler.py muvaffaqiyatli ko'chirildi"; \
+        echo "✅ handler.py copied successfully"; \
     fi
 
 WORKDIR /app
 
-# Health check (ixtiyoriy)
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python -c "import torch; print(torch.cuda.is_available())" || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD python -c "import torch; print('CUDA available:', torch.cuda.is_available())" || exit 1
 
-# Handler ishga tushirish
+# Start handler
 CMD ["python", "-u", "handler.py"]
