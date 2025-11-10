@@ -8,4 +8,6 @@ README.md
 .env
 *.log
 *.mp4
+*.yml
+*.md
 output/
