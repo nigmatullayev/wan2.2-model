@@ -1,27 +1,22 @@
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel
 
-# --- System packages ---
-RUN apt-get update && \
-    apt-get install -y git python3 python3-pip ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
-
-# --- Working directory ---
+# Ish katalogini sozlash
 WORKDIR /app
 
-# --- Copy and prepare requirements ---
+# Requirements faylini ko'chirish va o'rnatish
 COPY requirements.txt .
-
-# Upgrade pip tools
-RUN pip install --upgrade pip setuptools wheel
-
-# --- Install PyTorch (GPU) manually first ---
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# --- Install remaining dependencies ---
 RUN pip install --no-cache-dir -r requirements.txt
 
-# --- Copy app files ---
+# WAN 2.2 modelini oldindan yuklab olish (ixtiyoriy, lekin tavsiya etiladi)
+RUN python -c "from transformers import AutoModelForCausalLM, AutoTokenizer; \
+    AutoTokenizer.from_pretrained('wan-ai/wan-2.2-preview'); \
+    AutoModelForCausalLM.from_pretrained('wan-ai/wan-2.2-preview', device_map='cpu')"
+
+# Handler faylini ko'chirish
 COPY handler.py .
 
-# --- Entrypoint ---
-CMD ["python3", "handler.py"]
+# Portni ochish (ixtiyoriy)
+EXPOSE 8000
+
+# Handler ishga tushirish
+CMD ["python", "-u", "handler.py"]
