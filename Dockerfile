@@ -1,22 +1,24 @@
-FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 
-# Ish katalogini sozlash
+# Ish katalogi
 WORKDIR /app
 
-# Requirements faylini ko'chirish va o'rnatish
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Tizim paketlarini yangilash
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# WAN 2.2 modelini oldindan yuklab olish (ixtiyoriy, lekin tavsiya etiladi)
-RUN python -c "from transformers import AutoModelForCausalLM, AutoTokenizer; \
-    AutoTokenizer.from_pretrained('wan-ai/wan-2.2-preview'); \
-    AutoModelForCausalLM.from_pretrained('wan-ai/wan-2.2-preview', device_map='cpu')"
+# Python kutubxonalarini o'rnatish
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Handler faylini ko'chirish
 COPY handler.py .
 
-# Portni ochish (ixtiyoriy)
-EXPOSE 8000
+# Modelni oldindan yuklash (build vaqtida)
+RUN python -c "from transformers import AutoTokenizer; \
+    AutoTokenizer.from_pretrained('wan-ai/wan-2.2-preview')" || true
 
 # Handler ishga tushirish
 CMD ["python", "-u", "handler.py"]
