@@ -23,6 +23,9 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
 # Pip yangilash
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
+# NumPy 1.x o'rnatish (NumPy 2.x bilan muammo bo'lmasligi uchun)
+RUN pip install --no-cache-dir "numpy<2.0"
+
 WORKDIR /app
 
 # Wan2.2 repository clone
@@ -30,14 +33,21 @@ RUN git clone https://github.com/Wan-Video/Wan2.2.git /app/Wan2.2
 
 WORKDIR /app/Wan2.2
 
-# Wan2.2 dependencies o'rnatish (xatolikni to'g'ri ko'rsatish bilan)
+# NumPy constraint faylini yaratish
+RUN echo "numpy<2.0" > /tmp/numpy_constraint.txt
+
+# Wan2.2 dependencies o'rnatish
+# NumPy versiyasini constraint qilib o'rnatamiz
 RUN if [ -f requirements.txt ]; then \
         echo "📦 Requirements.txt topildi, dependency'lar o'rnatilmoqda..." && \
-        pip install --no-cache-dir -r requirements.txt || \
-        (echo "❌ Requirements.txt o'rnatishda xatolik!" && \
-         echo "📋 Fayl mavjudligi:" && ls -la requirements.txt && \
-         echo "📋 Fayl tarkibi (birinchi 50 qator):" && head -50 requirements.txt && \
-         exit 1); \
+        echo "📋 NumPy 1.x bilan constraint qilib o'rnatilmoqda..." && \
+        pip install --no-cache-dir -r requirements.txt --constraint /tmp/numpy_constraint.txt 2>&1 | tee /tmp/install.log || \
+        (echo "⚠️  Constraint bilan o'rnatishda xatolik, oddiy usul bilan urinib ko'ramiz..." && \
+         pip install --no-cache-dir -r requirements.txt 2>&1 | tee /tmp/install.log || \
+         (echo "❌ Requirements.txt o'rnatishda xatolik!" && \
+          echo "📋 Xatolik log'i:" && cat /tmp/install.log && \
+          echo "📋 Fayl tarkibi (birinchi 50 qator):" && head -50 requirements.txt && \
+          exit 1)); \
     else \
         echo "⚠️  Requirements.txt topilmadi, skip qilindi" && \
         echo "📋 Papka tarkibi:" && ls -la; \
