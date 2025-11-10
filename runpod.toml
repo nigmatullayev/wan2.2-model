@@ -1,4 +1,0 @@
-[serverless]
-entrypoint = "handler:generate_video"
-gpu = true
-timeout = 600
