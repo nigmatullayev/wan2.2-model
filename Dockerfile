@@ -56,9 +56,14 @@ RUN if [ -f requirements.txt ]; then \
 # RunPod qo'shish
 RUN pip install --no-cache-dir runpod
 
-# Model yuklab olish
+# Model yuklab olish (Python API orqali)
+# Model: Wan-AI/Wan2.2-T2V-A14B - Text-to-Video MoE model, supports 480P & 720P
+# Link: https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B
 RUN pip install --no-cache-dir "huggingface_hub[cli]" && \
-    huggingface-cli download Wan-AI/Wan2.2-T2V-A14B --local-dir ./Wan2.2-T2V-A14B
+    echo "📥 Wan2.2-T2V-A14B model yuklab olinmoqda..." && \
+    python -c "from huggingface_hub import snapshot_download; import os; os.makedirs('./Wan2.2-T2V-A14B', exist_ok=True); snapshot_download(repo_id='Wan-AI/Wan2.2-T2V-A14B', local_dir='./Wan2.2-T2V-A14B', resume_download=True)" && \
+    echo "✅ Model muvaffaqiyatli yuklab olindi!" && \
+    ls -lh ./Wan2.2-T2V-A14B | head -20
 
 # Handler faylini ko'chirish
 COPY handler.py /app/handler.py
