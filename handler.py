@@ -21,23 +21,57 @@ OUTPUT_DIR = "/app/Wan2.2/output"
 # Model mavjudligini tekshirish va yuklab olish
 def ensure_model_downloaded():
     """Model mavjudligini tekshirish va agar yo'q bo'lsa yuklab olish"""
-    if os.path.exists(MODEL_DIR) and os.listdir(MODEL_DIR):
-        logger.info(f"✅ Model allaqachon mavjud: {MODEL_DIR}")
-        return True
+    # Model papkasini tekshirish
+    if os.path.exists(MODEL_DIR):
+        files = os.listdir(MODEL_DIR)
+        if files and len(files) > 0:
+            logger.info(f"✅ Model allaqachon mavjud: {MODEL_DIR} ({len(files)} fayl)")
+            return True
+        else:
+            logger.warning(f"⚠️  Model papkasi bo'sh: {MODEL_DIR}")
     
     logger.info("📥 Model topilmadi, yuklab olinmoqda...")
+    logger.info(f"📂 Model papkasi: {MODEL_DIR}")
+    
     try:
+        # Disk space tekshirish
+        import shutil
+        stat = shutil.disk_usage(MODEL_DIR)
+        free_gb = stat.free / (1024**3)
+        logger.info(f"💾 Bo'sh disk joyi: {free_gb:.2f} GB")
+        
+        if free_gb < 50:
+            logger.warning(f"⚠️  Disk joyi yetarli emas (kerak: ~50GB, mavjud: {free_gb:.2f}GB)")
+        
         from huggingface_hub import snapshot_download
         os.makedirs(MODEL_DIR, exist_ok=True)
+        
+        logger.info("🔄 HuggingFace Hub orqali model yuklab olinmoqda...")
+        logger.info("⏳ Bu uzoq vaqt olishi mumkin (model ~27GB)...")
+        
         snapshot_download(
             repo_id='Wan-AI/Wan2.2-T2V-A14B',
             local_dir=MODEL_DIR,
-            resume_download=True
+            resume_download=True,
+            local_files_only=False
         )
-        logger.info("✅ Model muvaffaqiyatli yuklab olindi!")
-        return True
+        
+        # Model yuklab olinganini tekshirish
+        if os.path.exists(MODEL_DIR) and os.listdir(MODEL_DIR):
+            files_count = len(os.listdir(MODEL_DIR))
+            logger.info(f"✅ Model muvaffaqiyatli yuklab olindi! ({files_count} fayl)")
+            return True
+        else:
+            logger.error("❌ Model yuklab olindi, lekin papka bo'sh!")
+            return False
+            
+    except ImportError as e:
+        logger.error(f"❌ HuggingFace Hub import xatolik: {e}")
+        logger.error("💡 Iltimos, 'huggingface_hub' paketini o'rnatishni tekshiring")
+        return False
     except Exception as e:
-        logger.error(f"❌ Model yuklab olishda xatolik: {e}")
+        logger.error(f"❌ Model yuklab olishda xatolik: {e}", exc_info=True)
+        logger.error(f"📋 Xatolik turi: {type(e).__name__}")
         return False
 
 
@@ -47,8 +81,12 @@ def handler(event):
         logger.info(f"📥 Request qabul qilindi: {event}")
 
         # Model mavjudligini tekshirish va yuklab olish
-        if not ensure_model_downloaded():
-            return {"error": "Model yuklab olinmadi. Iltimos, qayta urinib ko'ring."}
+        model_status = ensure_model_downloaded()
+        if not model_status:
+            return {
+                "error": "Model yuklab olinmadi. Iltimos, qayta urinib ko'ring.",
+                "details": "Model yuklab olishda xatolik yuz berdi. Log'larni tekshiring."
+            }
 
         # Input parametrlar
         input_data = event.get("input", {})
