@@ -53,17 +53,14 @@ RUN if [ -f requirements.txt ]; then \
         echo "📋 Papka tarkibi:" && ls -la; \
     fi
 
-# RunPod qo'shish
-RUN pip install --no-cache-dir runpod
+# RunPod va HuggingFace Hub o'rnatish
+RUN pip install --no-cache-dir runpod "huggingface_hub[cli]"
 
-# HuggingFace Hub o'rnatish (runtime'da model yuklab olish uchun)
-RUN pip install --no-cache-dir "huggingface_hub[cli]"
-
-# Model papkasini yaratish (runtime'da yuklab olinadi)
-RUN mkdir -p ./Wan2.2-T2V-A14B
-
-# Output papkasi
-RUN mkdir -p /app/Wan2.2/output
+# Model va output papkalarini yaratish
+# ⚠️ MUHIM: Model build vaqtida yuklab OLINMAYDI!
+# Model runtime'da (handler.py orqali) birinchi request'da avtomatik yuklab olinadi
+RUN mkdir -p ./Wan2.2-T2V-A14B /app/Wan2.2/output && \
+    echo "✅ Model papkasi yaratildi (runtime'da yuklab olinadi)"
 
 # Handler faylini ko'chirish (build context'da mavjudligini tekshirish)
 COPY handler.py /app/handler.py
