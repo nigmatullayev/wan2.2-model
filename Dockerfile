@@ -1,14 +1,27 @@
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
-# Python o'rnatish
+# Environment
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Python va dependencies
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3-pip \
+    python3-dev \
     git \
     wget \
+    ffmpeg \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ln -s /usr/bin/python3 /usr/bin/python
+# Python alias
+RUN ln -sf /usr/bin/python3 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
+
+# Pip yangilash
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 WORKDIR /app
 
@@ -17,17 +30,27 @@ RUN git clone https://github.com/Wan-Video/Wan2.2.git /app/Wan2.2
 
 WORKDIR /app/Wan2.2
 
-# Dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir runpod
+# Wan2.2 dependencies o'rnatish
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Model yuklab olish (80GB+ kerak!)
-RUN pip install "huggingface_hub[cli]" && \
+# RunPod qo'shish
+RUN pip install --no-cache-dir runpod
+
+# Model yuklab olish
+RUN pip install --no-cache-dir "huggingface_hub[cli]" && \
     huggingface-cli download Wan-AI/Wan2.2-T2V-A14B --local-dir ./Wan2.2-T2V-A14B
 
-# Handler
-COPY handler_video.py /app/handler.py
+# Handler faylini ko'chirish
+COPY handler.py /app/handler.py
+
+# Output papkasi
+RUN mkdir -p /app/Wan2.2/output
 
 WORKDIR /app
 
+# Health check (ixtiyoriy)
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD python -c "import torch; print(torch.cuda.is_available())" || exit 1
+
+# Handler ishga tushirish
 CMD ["python", "-u", "handler.py"]
