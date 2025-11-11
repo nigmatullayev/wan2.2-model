@@ -4,10 +4,8 @@ __pycache__
 *.pyd
 .git
 .gitignore
-README.md
 .env
 *.log
 *.mp4
-*.yml
-*.md
 output/
+.github/

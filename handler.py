@@ -72,11 +72,28 @@ def download_model_with_retry(max_retries: int = 3) -> bool:
             import shutil
             stat = shutil.disk_usage(MODEL_DIR)
             free_gb = stat.free / (1024**3)
-            logger.info(f"💾 Bo'sh disk joyi: {free_gb:.2f} GB")
+            total_gb = stat.total / (1024**3)
+            used_gb = stat.used / (1024**3)
+            logger.info(f"💾 Disk ma'lumotlari:")
+            logger.info(f"   - Jami: {total_gb:.2f} GB")
+            logger.info(f"   - Ishlatilgan: {used_gb:.2f} GB")
+            logger.info(f"   - Bo'sh: {free_gb:.2f} GB")
             
-            if free_gb < 30:
-                error_msg = f"Disk joyi yetarli emas: {free_gb:.2f} GB (kerak: ~30GB)"
-                logger.error(f"❌ {error_msg}")
+            # Minimum disk space requirement (model ~27GB + overhead)
+            min_required_gb = 35
+            if free_gb < min_required_gb:
+                error_msg = (
+                    f"❌ Disk joyi yetarli emas!\n"
+                    f"   - Mavjud: {free_gb:.2f} GB\n"
+                    f"   - Kerak: {min_required_gb} GB\n"
+                    f"   - Qo'shimcha kerak: {min_required_gb - free_gb:.2f} GB\n\n"
+                    f"💡 Yechim: RunPod template'da disk hajmini oshiring:\n"
+                    f"   1. RunPod Dashboard → Serverless → Templates\n"
+                    f"   2. Template'ni tahrirlash\n"
+                    f"   3. 'Volume Size' ni kamida 50GB ga oshiring\n"
+                    f"   4. Template'ni saqlang va qayta deploy qiling"
+                )
+                logger.error(error_msg)
                 _model_download_status["error"] = error_msg
                 return False
             
