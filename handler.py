@@ -113,14 +113,118 @@ def download_model_with_retry(max_retries: int = 3) -> bool:
             logger.info(f"📂 Manzil: {MODEL_DIR}")
             logger.info("⏳ Bu uzoq vaqt olishi mumkin (model ~27GB)...")
             
-            # Model yuklab olish
-            snapshot_download(
-                repo_id=MODEL_REPO_ID,
-                local_dir=MODEL_DIR,
-                resume_download=True,
-                local_files_only=False,
-                token=None  # Public model, token kerak emas
-            )
+            # Model yuklab olish progress bilan
+            logger.info("🚀 Model yuklab olish boshlandi...")
+            
+            try:
+                from huggingface_hub import snapshot_download, HfApi
+                import threading
+                
+                # Progress tracking uchun thread
+                download_start_time = time.time()
+                last_size = 0
+                last_log_time = download_start_time
+                
+                def monitor_progress():
+                    """Model yuklab olish progress'ini kuzatish"""
+                    nonlocal last_size, last_log_time
+                    while _model_download_status["status"] == "downloading":
+                        try:
+                            # Model papkasidagi fayllar hajmini hisoblash
+                            if os.path.exists(MODEL_DIR):
+                                current_size = sum(
+                                    os.path.getsize(os.path.join(MODEL_DIR, f))
+                                    for f in os.listdir(MODEL_DIR)
+                                    if os.path.isfile(os.path.join(MODEL_DIR, f))
+                                )
+                                
+                                current_time = time.time()
+                                elapsed = current_time - last_log_time
+                                
+                                # Har 5 soniyada progress ko'rsatish
+                                if elapsed >= 5 or current_size > last_size:
+                                    current_size_gb = current_size / (1024**3)
+                                    downloaded_since_last = current_size - last_size
+                                    speed_mbps = (downloaded_since_last / elapsed / (1024**2)) if elapsed > 0 else 0
+                                    
+                                    # Taxminiy jami hajm (~27GB)
+                                    estimated_total_gb = 27.0
+                                    progress_percent = (current_size_gb / estimated_total_gb) * 100 if estimated_total_gb > 0 else 0
+                                    
+                                    total_elapsed = current_time - download_start_time
+                                    avg_speed = (current_size / total_elapsed / (1024**2)) if total_elapsed > 0 else 0
+                                    remaining_gb = estimated_total_gb - current_size_gb
+                                    eta_minutes = (remaining_gb * 1024 / avg_speed / 60) if avg_speed > 0 else 0
+                                    
+                                    logger.info(
+                                        f"📊 Progress: {progress_percent:.1f}% | "
+                                        f"{current_size_gb:.2f} GB / ~{estimated_total_gb:.2f} GB | "
+                                        f"Tezlik: {speed_mbps:.2f} MB/s | "
+                                        f"ETA: {eta_minutes:.1f} min"
+                                    )
+                                    
+                                    _model_download_status["progress"] = int(progress_percent)
+                                    last_size = current_size
+                                    last_log_time = current_time
+                        except Exception as e:
+                            logger.debug(f"Progress monitoring xatolik: {e}")
+                        
+                        time.sleep(2)  # 2 soniyada bir marta tekshirish
+                
+                # Progress monitoring thread'ni boshlash
+                progress_thread = threading.Thread(target=monitor_progress, daemon=True)
+                progress_thread.start()
+                
+                # Repository ma'lumotlarini olish
+                try:
+                    logger.info("📥 Repository ma'lumotlari olinmoqda...")
+                    api = HfApi()
+                    repo_info = api.repo_info(repo_id=MODEL_REPO_ID, repo_type="model")
+                    total_files = len(repo_info.siblings)
+                    logger.info(f"📋 Jami fayllar: {total_files}")
+                except Exception as e:
+                    logger.warning(f"⚠️  Repository ma'lumotlarini olishda xatolik: {e}")
+                
+                # Model yuklab olish
+                logger.info("📥 Model fayllari yuklab olinmoqda...")
+                snapshot_download(
+                    repo_id=MODEL_REPO_ID,
+                    local_dir=MODEL_DIR,
+                    resume_download=True,
+                    local_files_only=False,
+                    token=None
+                )
+                
+                # Yakuniy progress
+                final_size = sum(
+                    os.path.getsize(os.path.join(MODEL_DIR, f))
+                    for f in os.listdir(MODEL_DIR)
+                    if os.path.isfile(os.path.join(MODEL_DIR, f))
+                )
+                final_size_gb = final_size / (1024**3)
+                total_time = time.time() - download_start_time
+                avg_speed = (final_size / total_time / (1024**2)) if total_time > 0 else 0
+                
+                logger.info(f"✅ Model yuklab olish yakunlandi!")
+                logger.info(f"📦 Jami hajm: {final_size_gb:.2f} GB")
+                logger.info(f"⏱️  Vaqt: {total_time/60:.1f} daqiqa")
+                logger.info(f"🚀 O'rtacha tezlik: {avg_speed:.2f} MB/s")
+                
+            except Exception as e:
+                logger.error(f"❌ Model yuklab olishda xatolik: {e}", exc_info=True)
+                raise
+            
+            # Model yuklab olinganidan keyin hajmini ko'rsatish
+            try:
+                total_size = sum(
+                    os.path.getsize(os.path.join(MODEL_DIR, f))
+                    for f in os.listdir(MODEL_DIR)
+                    if os.path.isfile(os.path.join(MODEL_DIR, f))
+                )
+                total_size_gb = total_size / (1024**3)
+                logger.info(f"📦 Model hajmi: {total_size_gb:.2f} GB")
+            except Exception as e:
+                logger.warning(f"⚠️  Model hajmini hisoblashda xatolik: {e}")
             
             # Model yuklab olinganini tekshirish
             if check_model_exists():
