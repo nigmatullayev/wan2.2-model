@@ -157,13 +157,52 @@ If you see "Disk joyi yetarli emas" error, increase the volume size in your temp
 
 ## 🔍 Monitoring & Debugging
 
-### Logs
+### 📋 Log'larni Ko'rish
 
-The handler provides detailed logging:
-- Model download progress
-- Video generation status
-- Error messages with stack traces
-- Resource usage information
+RunPod serverless log'larini ko'rish uchun:
+
+#### 1. RunPod Dashboard orqali:
+1. **RunPod Dashboard** ga kiring: https://www.runpod.io/
+2. **Serverless** → **Endpoints** bo'limiga o'ting
+3. Endpoint'ni toping va **"View Logs"** yoki **"Logs"** tugmasini bosing
+4. Real-time log'larni ko'rasiz
+
+#### 2. Endpoint Details orqali:
+1. Endpoint'ni oching
+2. **"Logs"** tab'ini tanlang
+3. Yoki **"View Logs"** tugmasini bosing
+
+#### 3. Request Log'lari:
+- Har bir request uchun alohida log'lar ko'rsatiladi
+- Request ID orqali log'larni filtrlash mumkin
+- Real-time log streaming mavjud
+
+### 📊 Log Format
+
+Log'larda quyidagilar ko'rinadi:
+- ✅ Model download progress (har 5 soniyada)
+- ✅ Video generation status
+- ✅ Error messages with stack traces
+- ✅ Resource usage information
+- ✅ Disk space information
+- ✅ Model status updates
+
+### Log Misollari:
+
+```
+📥 Model yuklab olinmoqda: Wan-AI/Wan2.2-T2V-A14B
+📂 Manzil: /app/Wan2.2/Wan2.2-T2V-A14B
+🚀 Model yuklab olish boshlandi...
+📥 Repository ma'lumotlari olinmoqda...
+📋 Jami fayllar: 45
+📥 Model fayllari yuklab olinmoqda...
+📊 Progress: 15.3% | 4.13 GB / ~27.00 GB | Tezlik: 28.45 MB/s | ETA: 13.2 min
+📊 Progress: 32.7% | 8.83 GB / ~27.00 GB | Tezlik: 31.20 MB/s | ETA: 9.8 min
+✅ Model yuklab olish yakunlandi!
+📦 Jami hajm: 27.45 GB
+🎬 Video yaratilmoqda...
+✅ Video muvaffaqiyatli yaratildi!
+```
 
 ### Health Checks
 

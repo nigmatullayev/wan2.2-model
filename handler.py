@@ -125,55 +125,74 @@ def download_model_with_retry(max_retries: int = 3) -> bool:
                 last_size = 0
                 last_log_time = download_start_time
                 
+                # Download tugaguncha progress monitoring
+                download_active = threading.Event()
+                download_active.set()  # Download faol
+                
                 def monitor_progress():
                     """Model yuklab olish progress'ini kuzatish"""
                     nonlocal last_size, last_log_time
-                    while _model_download_status["status"] == "downloading":
+                    logger.info("🔄 Progress monitoring boshlandi...")
+                    check_count = 0
+                    
+                    while download_active.is_set():
                         try:
+                            check_count += 1
                             # Model papkasidagi fayllar hajmini hisoblash
                             if os.path.exists(MODEL_DIR):
-                                current_size = sum(
-                                    os.path.getsize(os.path.join(MODEL_DIR, f))
-                                    for f in os.listdir(MODEL_DIR)
-                                    if os.path.isfile(os.path.join(MODEL_DIR, f))
-                                )
-                                
-                                current_time = time.time()
-                                elapsed = current_time - last_log_time
-                                
-                                # Har 5 soniyada progress ko'rsatish
-                                if elapsed >= 5 or current_size > last_size:
-                                    current_size_gb = current_size / (1024**3)
-                                    downloaded_since_last = current_size - last_size
-                                    speed_mbps = (downloaded_since_last / elapsed / (1024**2)) if elapsed > 0 else 0
-                                    
-                                    # Taxminiy jami hajm (~27GB)
-                                    estimated_total_gb = 27.0
-                                    progress_percent = (current_size_gb / estimated_total_gb) * 100 if estimated_total_gb > 0 else 0
-                                    
-                                    total_elapsed = current_time - download_start_time
-                                    avg_speed = (current_size / total_elapsed / (1024**2)) if total_elapsed > 0 else 0
-                                    remaining_gb = estimated_total_gb - current_size_gb
-                                    eta_minutes = (remaining_gb * 1024 / avg_speed / 60) if avg_speed > 0 else 0
-                                    
-                                    logger.info(
-                                        f"📊 Progress: {progress_percent:.1f}% | "
-                                        f"{current_size_gb:.2f} GB / ~{estimated_total_gb:.2f} GB | "
-                                        f"Tezlik: {speed_mbps:.2f} MB/s | "
-                                        f"ETA: {eta_minutes:.1f} min"
+                                try:
+                                    files = [f for f in os.listdir(MODEL_DIR) if os.path.isfile(os.path.join(MODEL_DIR, f))]
+                                    current_size = sum(
+                                        os.path.getsize(os.path.join(MODEL_DIR, f))
+                                        for f in files
                                     )
                                     
-                                    _model_download_status["progress"] = int(progress_percent)
-                                    last_size = current_size
-                                    last_log_time = current_time
+                                    current_time = time.time()
+                                    elapsed = current_time - last_log_time
+                                    
+                                    # Har 3 soniyada yoki hajm o'zgarganda progress ko'rsatish
+                                    if elapsed >= 3 or current_size > last_size:
+                                        current_size_gb = current_size / (1024**3)
+                                        downloaded_since_last = current_size - last_size
+                                        speed_mbps = (downloaded_since_last / elapsed / (1024**2)) if elapsed > 0 and downloaded_since_last > 0 else 0
+                                        
+                                        # Taxminiy jami hajm (~27GB)
+                                        estimated_total_gb = 27.0
+                                        progress_percent = (current_size_gb / estimated_total_gb) * 100 if estimated_total_gb > 0 else 0
+                                        
+                                        total_elapsed = current_time - download_start_time
+                                        avg_speed = (current_size / total_elapsed / (1024**2)) if total_elapsed > 0 and current_size > 0 else 0
+                                        remaining_gb = estimated_total_gb - current_size_gb
+                                        eta_minutes = (remaining_gb * 1024 / avg_speed / 60) if avg_speed > 0 else 0
+                                        
+                                        logger.info(
+                                            f"📊 Progress: {progress_percent:.1f}% | "
+                                            f"{current_size_gb:.2f} GB / ~{estimated_total_gb:.2f} GB | "
+                                            f"Fayllar: {len(files)} | "
+                                            f"Tezlik: {speed_mbps:.2f} MB/s | "
+                                            f"ETA: {eta_minutes:.1f} min"
+                                        )
+                                        
+                                        _model_download_status["progress"] = int(progress_percent)
+                                        last_size = current_size
+                                        last_log_time = current_time
+                                    
+                                    # Birinchi tekshiruvda ham log qilish
+                                    if check_count == 1:
+                                        logger.info(f"📁 Model papkasi mavjud, fayllar soni: {len(files)}")
+                                        
+                                except Exception as e:
+                                    logger.warning(f"⚠️  Fayllarni hisoblashda xatolik: {e}")
+                            else:
+                                if check_count == 1:
+                                    logger.info("📁 Model papkasi hali yaratilmagan...")
+                                    
                         except Exception as e:
-                            logger.debug(f"Progress monitoring xatolik: {e}")
+                            logger.warning(f"⚠️  Progress monitoring xatolik: {e}")
                         
-                        time.sleep(2)  # 2 soniyada bir marta tekshirish
-                
-                # Progress monitoring thread'ni boshlash
-                progress_thread = threading.Thread(target=monitor_progress, daemon=True)
-                progress_thread.start()
+                        time.sleep(3)  # 3 soniyada bir marta tekshirish
+                    
+                    logger.info("✅ Progress monitoring yakunlandi")
                 
                 # Repository ma'lumotlarini olish
                 try:
@@ -181,19 +200,48 @@ def download_model_with_retry(max_retries: int = 3) -> bool:
                     api = HfApi()
                     repo_info = api.repo_info(repo_id=MODEL_REPO_ID, repo_type="model")
                     total_files = len(repo_info.siblings)
-                    logger.info(f"📋 Jami fayllar: {total_files}")
+                    # Jami hajmini hisoblash
+                    total_size_bytes = 0
+                    for sibling in repo_info.siblings:
+                        if hasattr(sibling, 'rfilename') and sibling.rfilename:
+                            try:
+                                file_info = api.get_path_info(sibling.rfilename, repo_id=MODEL_REPO_ID)
+                                if hasattr(file_info, 'size'):
+                                    total_size_bytes += file_info.size
+                            except:
+                                pass
+                    total_size_gb = total_size_bytes / (1024**3)
+                    logger.info(f"📋 Repository ma'lumotlari:")
+                    logger.info(f"   - Jami fayllar: {total_files}")
+                    logger.info(f"   - Taxminiy jami hajm: {total_size_gb:.2f} GB")
                 except Exception as e:
                     logger.warning(f"⚠️  Repository ma'lumotlarini olishda xatolik: {e}")
+                    total_files = 32  # Default qiymat
+                    total_size_gb = 27.0
+                
+                # Progress monitoring thread'ni boshlash
+                logger.info("🔄 Progress monitoring thread boshlandi...")
+                progress_thread = threading.Thread(target=monitor_progress, daemon=True)
+                progress_thread.start()
+                time.sleep(1)  # Thread boshlanishini kutish
                 
                 # Model yuklab olish
                 logger.info("📥 Model fayllari yuklab olinmoqda...")
-                snapshot_download(
-                    repo_id=MODEL_REPO_ID,
-                    local_dir=MODEL_DIR,
-                    resume_download=True,
-                    local_files_only=False,
-                    token=None
-                )
+                logger.info(f"📊 {total_files} ta fayl yuklab olinmoqda (taxminiy hajm: ~{total_size_gb:.2f} GB)...")
+                
+                try:
+                    snapshot_download(
+                        repo_id=MODEL_REPO_ID,
+                        local_dir=MODEL_DIR,
+                        resume_download=True,
+                        local_files_only=False,
+                        token=None
+                    )
+                finally:
+                    # Progress monitoring thread'ni to'xtatish
+                    download_active.clear()
+                    time.sleep(3)  # Oxirgi progress log'ini kutish
+                    _model_download_status["status"] = "completed"
                 
                 # Yakuniy progress
                 final_size = sum(
