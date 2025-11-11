@@ -246,27 +246,126 @@ def download_model_with_retry(max_retries: int = 3) -> bool:
                 progress_thread.start()
                 time.sleep(2)  # Thread boshlanishini kutish
                 
-                # Model yuklab olish
+                # Model yuklab olish - alternativ usullar bilan
                 msg1 = "📥 Model fayllari yuklab olinmoqda..."
                 msg2 = f"📊 {total_files} ta fayl yuklab olinmoqda (taxminiy hajm: ~{total_size_gb:.2f} GB)..."
                 print(msg1, flush=True)
                 print(msg2, flush=True)
                 logger.info(msg1)
                 logger.info(msg2)
+                   
+                download_success = False
+                download_method = "snapshot_download"
                 
+                # Usul 1: snapshot_download (asosiy usul) - timeout bilan
                 try:
-                    snapshot_download(
-                        repo_id=MODEL_REPO_ID,
-                        local_dir=MODEL_DIR,
-                        resume_download=True,
-                        local_files_only=False,
-                        token=None
-                    )
+                    logger.info("🔄 Usul 1: snapshot_download orqali yuklab olinmoqda...")
+                    logger.info("⏱️  Timeout: 2 soat (agar uzoq vaqt olsa, avtomatik ravishda keyingi usulga o'tadi)")
+                    
+                    # Timeout uchun thread
+                    download_completed = threading.Event()
+                    download_error = [None]
+                    
+                    def download_thread():
+                        try:
+                            snapshot_download(
+                                repo_id=MODEL_REPO_ID,
+                                local_dir=MODEL_DIR,
+                                resume_download=True,
+                                local_files_only=False,
+                                token=None
+                            )
+                            download_completed.set()
+                        except Exception as e:
+                            download_error[0] = e
+                            download_completed.set()
+                    
+                    download_thread_obj = threading.Thread(target=download_thread, daemon=False)
+                    download_thread_obj.start()
+                    
+                    # 2 soat timeout
+                    if download_completed.wait(timeout=7200):  # 2 soat = 7200 soniya
+                        if download_error[0]:
+                            raise download_error[0]
+                        download_success = True
+                        download_method = "snapshot_download"
+                        logger.info("✅ Usul 1 muvaffaqiyatli!")
+                    else:
+                        logger.warning("⚠️  Usul 1 timeout (2 soat), keyingi usulga o'tilmoqda...")
+                        raise TimeoutError("snapshot_download timeout (2 soat)")
+                        
+                except TimeoutError:
+                    logger.warning("⚠️  Usul 1 timeout, keyingi usulga o'tilmoqda...")
+                except Exception as e1:
+                    logger.warning(f"⚠️  Usul 1 muvaffaqiyatsiz: {e1}")
+                    
+                    # Usul 2: huggingface-cli command orqali
+                    try:
+                        logger.info("🔄 Usul 2: huggingface-cli orqali yuklab olinmoqda...")
+                        result = subprocess.run(
+                            ["huggingface-cli", "download", MODEL_REPO_ID, "--local-dir", MODEL_DIR, "--local-dir-use-symlinks", "False"],
+                            capture_output=True,
+                            text=True,
+                            timeout=3600,  # 1 soat timeout
+                            check=True
+                        )
+                        download_success = True
+                        download_method = "huggingface-cli"
+                        logger.info("✅ huggingface-cli orqali muvaffaqiyatli yuklab olindi!")
+                    except subprocess.TimeoutExpired:
+                        logger.error("❌ huggingface-cli timeout (1 soat)")
+                    except subprocess.CalledProcessError as e2:
+                        logger.warning(f"⚠️  Usul 2 muvaffaqiyatsiz: {e2}")
+                        logger.warning(f"STDOUT: {e2.stdout}")
+                        logger.warning(f"STDERR: {e2.stderr}")
+                    except Exception as e2:
+                        logger.warning(f"⚠️  Usul 2 xatolik: {e2}")
+                    
+                    # Usul 3: hf_hub_download orqali fayllarni birma-bir yuklab olish
+                    if not download_success:
+                        try:
+                            logger.info("🔄 Usul 3: hf_hub_download orqali fayllarni birma-bir yuklab olinmoqda...")
+                            from huggingface_hub import hf_hub_download
+                            
+                            # Repository fayllarini olish
+                            api = HfApi()
+                            repo_info = api.repo_info(repo_id=MODEL_REPO_ID, repo_type="model")
+                            
+                            downloaded_count = 0
+                            for sibling in repo_info.siblings:
+                                if hasattr(sibling, 'rfilename') and sibling.rfilename:
+                                    try:
+                                        file_path = hf_hub_download(
+                                            repo_id=MODEL_REPO_ID,
+                                            filename=sibling.rfilename,
+                                            local_dir=MODEL_DIR,
+                                            local_dir_use_symlinks=False,
+                                            resume_download=True
+                                        )
+                                        downloaded_count += 1
+                                        if downloaded_count % 5 == 0:
+                                            msg = f"📥 {downloaded_count}/{total_files} fayl yuklab olindi..."
+                                            print(msg, flush=True)
+                                            logger.info(msg)
+                                    except Exception as file_error:
+                                        logger.warning(f"⚠️  Fayl yuklab olishda xatolik ({sibling.rfilename}): {file_error}")
+                            
+                            download_success = True
+                            download_method = "hf_hub_download"
+                            logger.info(f"✅ {downloaded_count} ta fayl hf_hub_download orqali yuklab olindi!")
+                        except Exception as e3:
+                            logger.error(f"❌ Usul 3 muvaffaqiyatsiz: {e3}", exc_info=True)
+                
                 finally:
                     # Progress monitoring thread'ni to'xtatish
                     download_active.clear()
                     time.sleep(3)  # Oxirgi progress log'ini kutish
                     _model_download_status["status"] = "completed"
+                    
+                    if download_success:
+                        logger.info(f"✅ Model {download_method} usuli orqali muvaffaqiyatli yuklab olindi!")
+                    else:
+                        raise Exception("Barcha usullar muvaffaqiyatsiz. Model yuklab olinmadi.")
                 
                 # Yakuniy progress
                 final_size = sum(
